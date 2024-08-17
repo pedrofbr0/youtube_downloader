@@ -1,31 +1,36 @@
 import streamlit as st
-from pytubefix import YouTube
-import os
+import yt_dlp
 
-def download_youtube_video(url: str, resolution: str, audio_only: bool) -> str:
+def download_youtube_video(url: str, quality: str, audio_only: bool) -> str:
     """
-    Downloads a YouTube video and saves it to the specified path.
+    Downloads a YouTube video or audio using yt-dlp.
 
     :param url: URL of the YouTube video
-    :param resolution: Resolution of the video to download
+    :param quality: Quality of the video to download
     :param audio_only: If True, download only the audio
     :return: Filename of the downloaded video/audio
     """
-    yt = YouTube(url)
-
+    ydl_opts = {}
+    
     if audio_only:
-        stream = yt.streams.filter(only_audio=True).first()
-        output_file = stream.download()
-        base, ext = os.path.splitext(output_file)
-        new_file = base + '.mp3'
-        os.rename(output_file, new_file)
-        return new_file
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+        }
     else:
-        stream = yt.streams.filter(res=resolution, progressive=True).first()
-        if not stream:
-            st.error(f"No stream available for resolution: {resolution}")
-            return None
-        return stream.download()
+        ydl_opts = {
+            'format': f'bestvideo[height<={quality}]+bestaudio/best',
+            'outtmpl': '%(title)s.%(ext)s',
+            'merge_output_format': 'mp4',
+        }
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        result = ydl.download([url])
+        return result
 
 def main():
     st.title("YouTube Video Downloader")
@@ -33,30 +38,21 @@ def main():
     url = st.text_input("Enter the URL of the YouTube video:")
     
     if url:
-        yt = YouTube(url)
-        streams = yt.streams.filter(progressive=True).all()
-        resolutions = list(set([stream.resolution for stream in streams if stream.resolution]))
-        resolutions.sort(reverse=True)
-        resolutions.append("Audio Only")
+        ydl = yt_dlp.YoutubeDL()
+        meta = ydl.extract_info(url, download=False)
+        video_title = meta.get('title', 'video')
         
-        resolution = st.selectbox("Select resolution", resolutions)
+        quality = st.selectbox(
+            "Select quality", 
+            options=["144p", "360p", "480p", "720p", "1080p", "Audio Only"]
+        )
+        
+        audio_only = quality == "Audio Only"
 
-        download_button = st.button("Download")
-
-        if download_button:
-            if resolution == "Audio Only":
-                audio_only = True
-                resolution = None
-            else:
-                audio_only = False
-
-            st.write(f"Downloading {resolution}...")
-            video_file = download_youtube_video(url, resolution, audio_only)
-            
-            if video_file:
-                with open(video_file, "rb") as file:
-                    st.download_button(label="Download", data=file, file_name=os.path.basename(video_file), mime="application/octet-stream")
-                st.success("Download complete!")
+        if st.button("Download"):
+            st.write(f"Downloading {video_title} at {quality}...")
+            download_youtube_video(url, quality.replace("p", ""), audio_only)
+            st.success("Download complete!")
 
 if __name__ == "__main__":
     main()

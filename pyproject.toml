@@ -8,7 +8,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.12"
 streamlit = "^1.37.1"
-pytubefix = "^6.12.0"
+yt-dlp = "^2024.8.6"
 
 
 [build-system]
