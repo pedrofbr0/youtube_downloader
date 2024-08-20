@@ -1,80 +1,84 @@
 import json
 import streamlit as st
+from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 import yt_dlp
 import os
+import requests
+import subprocess
 
 # Configurações da API do Google
 SCOPES = ['https://www.googleapis.com/auth/youtube.readonly']
 CLIENT_SECRETS_FILE = "client_secret.json"
+TOKEN_FILE = "token.json"
 
+# Adicionando as credenciais do OAuth2
 def get_authenticated_service():
-    flow = InstalledAppFlow.from_client_secrets_file(
-        CLIENT_SECRETS_FILE,
-        SCOPES
-    )
-    creds = flow.run_local_server(port=8080)
+    creds = None
+    if os.path.exists('token.json'):
+        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(google.auth.transport.requests.Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                CLIENT_SECRETS_FILE, SCOPES, redirect_uri=REDIRECT_URI)
+            creds = flow.run_local_server(port=8501)
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
+    
     return creds
 
-def get_download_url(url, format_id):
-    ydl_opts = {
-        'format': format_id,
-        'noplaylist': True,
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info_dict = ydl.extract_info(url, download=False)
-        video_url = info_dict['url']
-        return video_url
+import requests
+import os
 
-st.title('YouTube Video Downloader')
-
-# Verifica se está autenticado
-service = get_authenticated_service()
-
+# Interface do Streamlit
 url = st.text_input('Insira a URL do vídeo do YouTube:')
 download_url = None
 
 if url:
-    ydl_opts = {'noplaylist': True}
-    formats = []
-    
+    ydl_opts = {'noplaylist': True, 'quiet': True}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info= ydl.extract_info(url, download=False)
-        info_dict = ydl.sanitize_info(info)
-        print(info_dict)
-        print(json.dumps(info_dict))
-        info_dict = ydl.extract_info(url, download=False)
-        video_formats = info_dict.get('formats', [])
+        info = ydl.extract_info(url, download=False)
+        formats = info['formats']
+        # Use `.get()` para evitar o KeyError se 'format_note' não existir
+        format_options = [f"{f.get('format_note', 'Unknown')} ({f.get('width', 'N/A')}x{f.get('height', 'N/A')})" for f in formats if 'vcodec' in f and 'acodec' in f]
+        selected_format = st.selectbox('Escolha a qualidade de download:', format_options)
         
+        if st.button('Download'):
+            selected_format_info = formats[format_options.index(selected_format)]
+            video_url = selected_format_info['url']
+            audio_format = next((f for f in formats if 'acodec' in f and f['acodec'] != 'none'), None)
+            
+            if audio_format:
+                audio_url = audio_format['url']
+                st.write(f"Baixando com formato ID: {selected_format_info['format_id']}")
+                
+                # Baixar vídeo e áudio separadamente usando requests
+                video_file = 'video.mp4'
+                audio_file = 'audio.mp4'
+                
+                # Função para baixar arquivos
+                def download_file(url, filename):
+                    with requests.get(url, stream=True) as r:
+                        r.raise_for_status()
+                        with open(filename, 'wb') as f:
+                            for chunk in r.iter_content(chunk_size=8192):
+                                f.write(chunk)
+                
+                # Baixando arquivos
+                download_file(video_url, video_file)
+                download_file(audio_url, audio_file)
+                
+                # Mesclar vídeo e áudio usando ffmpeg
+                output_file = 'final_video.mp4'
+                os.system(f'ffmpeg -i {video_file} -i {audio_file} -c:v copy -c:a aac {output_file}')
+                
+                st.success('Download completo!')
+                st.markdown(f"[Baixar vídeo](final_video.mp4)")
+            else:
+                st.error('Não foi possível encontrar uma faixa de áudio.')
 
-        
-        for f in video_formats:
-            format_id = f.get('format_id')
-            format_note = f.get('format_note', 'N/A')
-            resolution = f.get('resolution', 'N/A')
-            if format_id and format_note:
-                formats.append({"id": format_id, "display": f"{resolution} ({format_note})"})
-
-    
-    # format_options = [f['display'] for f in formats]
-    # selected_format = st.selectbox("Escolha a qualidade de download:", format_options)
-    
-    format_options = [f['display'] for f in formats]
-    selected_format_display = st.selectbox("Escolha a qualidade de download:", format_options)
-        
-    if st.button("Download"):
-        selected_format = next((f for f in formats if f['display'] == selected_format_display), None)
-        if selected_format:
-            st.success(f"Baixando com formato ID: {selected_format['id']}")
-            # Lógica para baixar o vídeo usando o `selected_format['id']`
-            download_url = get_download_url(url, selected_format['id'])
-        else:
-            st.error("Formato não encontrado.")
-    # if st.button('Gerar Link de Download'):
-    #     selected_format_id = formats[format_options.index(selected_format)][0]
-    #     download_url = get_download_url(url, selected_format_id)
-    #     st.success('Link de download gerado! Clique abaixo para baixar o vídeo.')
-    #     st.markdown(f"[Download Video]({download_url})", unsafe_allow_html=True)
-
-if download_url:
-    st.markdown(f"[Download Video]({download_url})", unsafe_allow_html=True)
