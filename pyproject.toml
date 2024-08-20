@@ -9,6 +9,10 @@ readme = "README.md"
 python = "^3.12"
 streamlit = "^1.37.1"
 yt-dlp = "^2024.8.6"
+google-auth = "^2.34.0"
+google-auth-oauthlib = "^1.2.1"
+google-auth-httplib2 = "^0.2.0"
+google-api-python-client = "^2.141.0"
 
 
 [build-system]
