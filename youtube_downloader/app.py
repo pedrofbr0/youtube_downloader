@@ -12,9 +12,16 @@ import subprocess
 
 # Configurações da API do Google
 SCOPES = ['https://www.googleapis.com/auth/youtube.readonly']
-CLIENT_SECRETS_FILE = "/etc/secrets/client_secret.json"
-TOKEN_FILE = "/etc/secrets/token.json"
+# CLIENT_SECRETS_FILE = "../etc/secrets/client_secret.json"
+# TOKEN_FILE = "../etc/secrets/token.json"
 REDIRECT_URI = "http://localhost:8080/"
+
+# Obtém o diretório onde o script atual está localizado
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Configura os caminhos completos dos arquivos .json baseados no diretório do script
+CLIENT_SECRETS_FILE = os.path.join(BASE_DIR, 'etc', 'secrets', 'client_secret.json')
+TOKEN_FILE = os.path.join(BASE_DIR, 'etc','secrets', 'token.json')
 
 # Adding credentials to OAuth2
 def get_authenticated_service():
@@ -27,7 +34,7 @@ def get_authenticated_service():
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
-            creds = flow.run_local_server(port=8501)
+            creds = flow.run_local_server(port=8080)
         # Salva o token para reutilização futura
         with open(TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())
