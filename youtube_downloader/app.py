@@ -12,8 +12,8 @@ import subprocess
 
 # Configurações da API do Google
 SCOPES = ['https://www.googleapis.com/auth/youtube.readonly']
-CLIENT_SECRETS_FILE = "client_secret.json"
-TOKEN_FILE = "token.json"
+CLIENT_SECRETS_FILE = "/etc/secrets/client_secret.json"
+TOKEN_FILE = "/etc/secrets/token.json"
 REDIRECT_URI = "http://localhost:8080/"
 
 # Adding credentials to OAuth2
