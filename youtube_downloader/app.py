@@ -12,16 +12,27 @@ import subprocess
 
 # Configurações da API do Google
 SCOPES = ['https://www.googleapis.com/auth/youtube.readonly']
-# CLIENT_SECRETS_FILE = "../etc/secrets/client_secret.json"
-# TOKEN_FILE = "../etc/secrets/token.json"
+
 REDIRECT_URI = "http://localhost:8080/"
 
 # Obtém o diretório onde o script atual está localizado
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Configura os caminhos completos dos arquivos .json baseados no diretório do script
 CLIENT_SECRETS_FILE = os.path.join(BASE_DIR, 'etc', 'secrets', 'client_secret.json')
+print(CLIENT_SECRETS_FILE)
 TOKEN_FILE = os.path.join(BASE_DIR, 'etc','secrets', 'token.json')
+print(TOKEN_FILE)
+
+# CLIENT_SECRETS_FILE = "../etc/secrets/client_secret.json"
+# TOKEN_FILE = "../etc/secrets/token.json"
+
+if not os.path.exists(CLIENT_SECRETS_FILE):
+    print(f'Arquivo {CLIENT_SECRETS_FILE} não encontrado')
+    raise FileNotFoundError(f'Arquivo {CLIENT_SECRETS_FILE} não encontrado')
+
+
 
 # Adding credentials to OAuth2
 def get_authenticated_service():
@@ -49,14 +60,12 @@ def format_selector(ctx):
     formats = ctx.get('formats')[::-1]
 
     # acodec='none' means there is no audio
-    best_video = next(f for f in formats
-                      if f['vcodec'] != 'none' and f['acodec'] == 'none')
+    best_video = next(f for f in formats if f['vcodec'] != 'none' and f['acodec'] == 'none')
 
     # find compatible audio extension
     audio_ext = {'mp4': 'm4a', 'webm': 'webm'}[best_video['ext']]
     # vcodec='none' means there is no video
-    best_audio = next(f for f in formats if (
-        f['acodec'] != 'none' and f['vcodec'] == 'none' and f['ext'] == audio_ext))
+    best_audio = next(f for f in formats if (f['acodec'] != 'none' and f['vcodec'] == 'none' and f['ext'] == audio_ext))
 
     # These are the minimum required fields for a merged format
     yield {
@@ -75,30 +84,54 @@ video_url = st.text_input('Video URL')
 download_url = None
 service = get_authenticated_service()
 
-ydl_opts = {}
-
 # format_options = {'format': 'best[ext=mp4]'} # "bestvideo[ext=mp4]+bestaudio[ext=m4a]"
 
 # with yt_dlp.YoutubeDL(ydl_opts) as ydl:
 #     info = ydl.extract_info(video_url, download=False)
 #     sanitized_info = ydl.sanitize_info(info)
+
+formato_desejado = "mp4"
+resolucao_desejada = "720p"
+
+filtro = lambda elemento: elemento.get('video_ext') == formato_desejado and elemento.get('format_note') == resolucao_desejada
     
 if video_url:
-    ydl_opts = {'format': format_selector}
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        # ydl.download([video_url])
-    
-    
-        if st.button('Gerar Link de Download'):
+    ydl_opts = {'format': format_selector}        
+    # ydl.download([video_url])
+    if st.button('Gerar Link de Download'):
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(video_url, download=False)
             sanitized_info = ydl.sanitize_info(info_dict)
-            # video_url = sanitized_info['url']
-            with open("data.json", "w") as file:
-                json.dump(sanitized_info, file)
-            video_url = info_dict['url']
-            # selected_format_id = format_list[format_options.index(selected_format)][0]
-            st.success('Link de download gerado! Clique abaixo para baixar o vídeo.')
-            st.markdown(f"[Download Video]({video_url})", unsafe_allow_html=True)
+            video_title = sanitized_info.get('title')
+        # video_url = sanitized_info['url']
+        with open("data.json", "w") as file:
+            json.dump(sanitized_info, file)
+
+        results = list(filter(filtro, sanitized_info['formats']))
+        # results = filter(filtro, sanitized_info['formats'])
+        
+        if results:
+            video_url = results[0]['url']
+            
+            # st.markdown(f"""
+            #     <a href="{video_url}" download="{video_title}.mp4" id="download-link"></a>
+            #     <script>
+            #         document.getElementById("download-link").click();
+            #     </script>
+            # """, unsafe_allow_html=True)
+            
+            st.success("Link de download gerado! Clique abaixo para baixar o vídeo.")
+            # st.markdown(f"[Download Video]({video_url})", unsafe_allow_html=True)
+            st.download_button('Download Video', video_url, f'{video_title}.{formato_desejado}')
+        else:
+            st.error("Não foi possível encontrar o formato de vídeo desejado.")
+        
+        # # selected_format_id = format_list[format_options.index(selected_format)][0]
+        # st.success('Link de download gerado! Clique abaixo para baixar o vídeo.')
+        # st.markdown(f"""<a href="{video_url}" download="{video_title}.mp4" id="download-link"></a>""", unsafe_allow_html=True)
+        
+        # HTML para forçar o download diretamente no navegador do usuário final
+        
 
     if download_url:
         st.markdown(f"[Download Video]({download_url})", unsafe_allow_html=True)
@@ -115,7 +148,6 @@ if video_url:
 #         # Use `.get()` para evitar o KeyError se 'format_note' não existir
 #         format_options = [f"{f.get('format_note', 'Unknown')} ({f.get('width', 'N/A')}x{f.get('height', 'N/A')})" for f in formats if 'vcodec' in f and 'acodec' in f]
 #         selected_format = st.selectbox('Escolha a qualidade de download:', format_options)
-        q
 #         if st.button('Download'):
 #             selected_format_info = formats[format_options.index(selected_format)]
 #             video_url = selected_format_info['url']
