@@ -8,7 +8,8 @@ import os
 
 # GOOGLE API CONFIGURATION
 SCOPES = ['https://www.googleapis.com/auth/youtube.readonly']
-REDIRECT_URI = "http://localhost:8080/"
+# REDIRECT_URI = "http://localhost:8080/"
+REDIRECT_URI = "https://youtube-downloader-x11v.onrender.com/"
 
 # Get the content of CLIENT_SECRET_JSON from environment variables
 client_secret_json = os.getenv("CLIENT_SECRET_JSON")
@@ -18,6 +19,28 @@ if client_secret_json:
     client_secret_info = json.loads(client_secret_json)
 else:
     raise ValueError("CLIENT_SECRET_JSON is not configured in environment variables")
+
+def get_authorization_url():
+    # Use the information in the client_secret.json to identify
+    # the application requesting authorization.
+    flow = InstalledAppFlow.Flow.from_client_config(
+        client_config=client_secret_json,
+        scopes=SCOPES)
+
+    # Indicate where the API server will redirect the user after the user completes
+    # the authorization flow. The redirect URI is required.
+    flow.redirect_uri = 'http://localhost:8000'
+
+    # Generate URL for request to Google's OAuth 2.0 server.
+    # Use kwargs to set optional request parameters.
+    authorization_url, state = flow.authorization_url(
+        # Enable offline access so that you can refresh an access token without
+        # re-prompting the user for permission. Recommended for web server apps.
+        access_type='offline',
+        # Enable incremental authorization. Recommended as a best practice.
+        include_granted_scopes='true')
+
+    return authorization_url, state
 
 # Adding credentials to OAuth2
 def get_authenticated_service():
@@ -32,6 +55,7 @@ def get_authenticated_service():
         else:
             
             flow = InstalledAppFlow.from_client_config(client_secret_info, SCOPES)
+            flow.redirect_uri = REDIRECT_URI
             creds = flow.run_local_server(port=8080)
         # Save the credentials for the next run (in environment variable for production)
         os.environ['TOKEN_JSON'] = creds.to_json()
