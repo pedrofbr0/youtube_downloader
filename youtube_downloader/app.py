@@ -3,7 +3,6 @@ import streamlit as st
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
 import yt_dlp
 import os
 
@@ -11,29 +10,31 @@ import os
 SCOPES = ['https://www.googleapis.com/auth/youtube.readonly']
 REDIRECT_URI = "http://localhost:8080/"
 
-# Get directory where the script is located
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Get the content of CLIENT_SECRET_JSON from environment variables
+client_secret_json = os.getenv("CLIENT_SECRET_JSON")
 
-# Set the path to the client secrets and token fileS
-CLIENT_SECRETS_FILE = os.path.join(BASE_DIR, 'etc', 'secrets', 'client_secret.json')
-TOKEN_FILE = os.path.join(BASE_DIR, 'etc','secrets', 'token.json')
+# If all the data was retrieved correclty
+if client_secret_json:
+    client_secret_info = json.loads(client_secret_json)
+else:
+    raise ValueError("CLIENT_SECRET_JSON is not configured in environment variables")
 
 # Adding credentials to OAuth2
 def get_authenticated_service():
     creds = None
-    if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+    token_json = os.getenv("TOKEN_JSON")
+    if token_json:
+        creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
     
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
+            
+            flow = InstalledAppFlow.from_client_config(client_secret_info, SCOPES)
             creds = flow.run_local_server(port=8080)
-        # Save the credentials for the next run
-        with open(TOKEN_FILE, 'w') as token:
-            token.write(creds.to_json())
-    
+        # Save the credentials for the next run (in environment variable for production)
+        os.environ['TOKEN_JSON'] = creds.to_json()
     return creds
 def format_selector(ctx):
     # Select the best video and the best audio that won't result in an mkv.
