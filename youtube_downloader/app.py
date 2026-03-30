@@ -1,4 +1,5 @@
 import json
+import json.scanner
 import streamlit as st
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -11,6 +12,13 @@ SCOPES = ['https://www.googleapis.com/auth/youtube.readonly']
 # REDIRECT_URI = "http://localhost:8080/"
 REDIRECT_URI = "https://youtube-downloader-x11v.onrender.com/"
 
+# Get directory where the script is located
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Set the path to the client secrets and token fileS
+CLIENT_SECRETS_FILE = os.path.join(BASE_DIR, 'etc', 'secrets', 'client_secret.json')
+TOKEN_FILE = os.path.join(BASE_DIR, 'etc','secrets', 'token.json')
+
 # Get the content of CLIENT_SECRET_JSON from environment variables
 client_secret_json = os.getenv("CLIENT_SECRET_JSON")
 
@@ -19,28 +27,6 @@ if client_secret_json:
     client_secret_info = json.loads(client_secret_json)
 else:
     raise ValueError("CLIENT_SECRET_JSON is not configured in environment variables")
-
-def get_authorization_url():
-    # Use the information in the client_secret.json to identify
-    # the application requesting authorization.
-    flow = InstalledAppFlow.Flow.from_client_config(
-        client_config=client_secret_json,
-        scopes=SCOPES)
-
-    # Indicate where the API server will redirect the user after the user completes
-    # the authorization flow. The redirect URI is required.
-    flow.redirect_uri = 'http://localhost:8000'
-
-    # Generate URL for request to Google's OAuth 2.0 server.
-    # Use kwargs to set optional request parameters.
-    authorization_url, state = flow.authorization_url(
-        # Enable offline access so that you can refresh an access token without
-        # re-prompting the user for permission. Recommended for web server apps.
-        access_type='offline',
-        # Enable incremental authorization. Recommended as a best practice.
-        include_granted_scopes='true')
-
-    return authorization_url, state
 
 # Adding credentials to OAuth2
 def get_authenticated_service():
@@ -53,13 +39,23 @@ def get_authenticated_service():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            
+            print(client_secret_info)
             flow = InstalledAppFlow.from_client_config(client_secret_info, SCOPES)
-            flow.redirect_uri = REDIRECT_URI
             creds = flow.run_local_server(port=8080)
-        # Save the credentials for the next run (in environment variable for production)
-        os.environ['TOKEN_JSON'] = creds.to_json()
-    return creds
+            # creds._refresh_token = flow.run_local_server(
+            #     host='localhost',
+            #     port=8080,
+            #     authorization_prompt_message='Please visit this URL: {url}',
+            #     success_message='The auth flow is complete; you may close this window.',
+            #     open_browser=False
+            # )
+
+            # Save the credentials for the next run (in environment variable for production)
+            # os.environ['TOKEN_JSON'] = json.dumps(creds._refresh_token)
+            with open('token_json.json', 'w') as token:
+                token.write(json.dumps(creds))
+                print(creds)
+            return creds
 def format_selector(ctx):
     # Select the best video and the best audio that won't result in an mkv.
     
