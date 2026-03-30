@@ -1,58 +1,113 @@
+import json
+import json.scanner
 import streamlit as st
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2.credentials import Credentials
 import yt_dlp
+import os
 
-def download_youtube_video(url: str, quality: str, audio_only: bool) -> str:
-    """
-    Downloads a YouTube video or audio using yt-dlp.
+# GOOGLE API CONFIGURATION
+SCOPES = ['https://www.googleapis.com/auth/youtube.readonly']
+# REDIRECT_URI = "http://localhost:8080/"
+REDIRECT_URI = "https://youtube-downloader-x11v.onrender.com/"
 
-    :param url: URL of the YouTube video
-    :param quality: Quality of the video to download
-    :param audio_only: If True, download only the audio
-    :return: Filename of the downloaded video/audio
-    """
-    ydl_opts = {}
+# Get directory where the script is located
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Set the path to the client secrets and token fileS
+CLIENT_SECRETS_FILE = os.path.join(BASE_DIR, 'etc', 'secrets', 'client_secret.json')
+TOKEN_FILE = os.path.join(BASE_DIR, 'etc','secrets', 'token.json')
+
+# Get the content of CLIENT_SECRET_JSON from environment variables
+client_secret_json = os.getenv("CLIENT_SECRET_JSON")
+
+# If all the data was retrieved correclty
+if client_secret_json:
+    client_secret_info = json.loads(client_secret_json)
+else:
+    raise ValueError("CLIENT_SECRET_JSON is not configured in environment variables")
+
+# Adding credentials to OAuth2
+def get_authenticated_service():
+    creds = None
+    token_json = os.getenv("TOKEN_JSON")
+    if token_json:
+        creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
     
-    if audio_only:
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-        }
-    else:
-        ydl_opts = {
-            'format': f'bestvideo[height<={quality}]+bestaudio/best',
-            'outtmpl': '%(title)s.%(ext)s',
-            'merge_output_format': 'mp4',
-        }
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            print(client_secret_info)
+            flow = InstalledAppFlow.from_client_config(client_secret_info, SCOPES)
+            creds = flow.run_local_server(port=8080)
+            # creds._refresh_token = flow.run_local_server(
+            #     host='localhost',
+            #     port=8080,
+            #     authorization_prompt_message='Please visit this URL: {url}',
+            #     success_message='The auth flow is complete; you may close this window.',
+            #     open_browser=False
+            # )
+
+            # Save the credentials for the next run (in environment variable for production)
+            # os.environ['TOKEN_JSON'] = json.dumps(creds._refresh_token)
+            with open('token_json.json', 'w') as token:
+                token.write(json.dumps(creds))
+                print(creds)
+            return creds
+def format_selector(ctx):
+    # Select the best video and the best audio that won't result in an mkv.
     
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        result = ydl.download([url])
-        return result
+    # formats are already sorted worst to best
+    formats = ctx.get('formats')[::-1]
 
-def main():
-    st.title("YouTube Video Downloader")
+    # acodec='none' means there is no audio
+    best_video = next(f for f in formats if f['vcodec'] != 'none' and f['acodec'] == 'none')
 
-    url = st.text_input("Enter the URL of the YouTube video:")
+    # find compatible audio extension
+    audio_ext = {'mp4': 'm4a', 'webm': 'webm'}[best_video['ext']]
+    # vcodec='none' means there is no video
+    best_audio = next(f for f in formats if (f['acodec'] != 'none' and f['vcodec'] == 'none' and f['ext'] == audio_ext))
+
+    # These are the minimum required fields for a merged format
+    yield {
+        'format_id': f'{best_video["format_id"]}+{best_audio["format_id"]}',
+        'ext': best_video['ext'],
+        'requested_formats': [best_video, best_audio],
+        # Must be + separated list of protocols
+        'protocol': f'{best_video["protocol"]}+{best_audio["protocol"]}'
+    }
     
-    if url:
-        ydl = yt_dlp.YoutubeDL()
-        meta = ydl.extract_info(url, download=False)
-        video_title = meta.get('title', 'video')
-        
-        quality = st.selectbox(
-            "Select quality", 
-            options=["144p", "360p", "480p", "720p", "1080p", "Audio Only"]
-        )
-        
-        audio_only = quality == "Audio Only"
+st.title('YouTube Downloader')
 
-        if st.button("Download"):
-            st.write(f"Downloading {video_title} at {quality}...")
-            download_youtube_video(url, quality.replace("p", ""), audio_only)
-            st.success("Download complete!")
+#Streamlit interface
+video_url = st.text_input('Video URL')
+download_url = None
+service = get_authenticated_service()
 
-if __name__ == "__main__":
-    main()
+wanted_format = "mp4"
+wanted_quality = "720p"
+
+video_filter = lambda elemento: elemento.get('video_ext') == wanted_format and elemento.get('format_note') == wanted_quality
+    
+if video_url:
+    ydl_opts = {'format': format_selector}        
+    # ydl.download([video_url])
+    if st.button('Generate Link'):
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info_dict = ydl.extract_info(video_url, download=False)
+            sanitized_info = ydl.sanitize_info(info_dict)
+            video_title = sanitized_info.get('title')
+        # with open("data.json", "w") as file:
+        #     json.dump(sanitized_info, file)
+
+        results = list(filter(video_filter, sanitized_info['formats']))
+             
+        if results:
+            video_url = results[0]['url']
+            st.success("Download link generated! Click below to download the video.")
+            st.download_button('Download Video', video_url, f'{video_title}.{wanted_format}')
+        else:
+            st.error("Could not find a video with the selected format and quality.")
+            raise ValueError("Could not find a video with the selected format and quality.")
